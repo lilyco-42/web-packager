@@ -1,7 +1,11 @@
 #pragma once
 #include <string>
 #include <unordered_map>
+#include <cstdlib>
+
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 enum class Lang { EN, ZH };
 
@@ -37,10 +41,20 @@ public:
 
 private:
     I18n() {
+#ifdef _WIN32
         LANGID lid = GetUserDefaultUILanguage();
         // 0x0804 = zh-CN, 0x0C04 = zh-HK, 0x0404 = zh-TW
         m_lang = (lid == 0x0804 || lid == 0x0C04 || lid == 0x0404) ? Lang::ZH
                                                                    : Lang::EN;
+#else
+        const char *lang_env = getenv("LANG");
+        m_lang = Lang::EN;
+        if (lang_env) {
+            std::string ls(lang_env);
+            if (ls.size() >= 2 && ls.substr(0, 2) == "zh")
+                m_lang = Lang::ZH;
+        }
+#endif
 
         // clang-format off
         // === Menu & Actions ===

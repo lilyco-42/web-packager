@@ -15,6 +15,9 @@ output/
 Thumbs.db
 .DS_Store
 
+# ImGui settings (auto-generated)
+imgui.ini
+
 # Dependencies (fetched by CMake)
 deps/
 

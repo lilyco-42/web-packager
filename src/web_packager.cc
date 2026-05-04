@@ -5,10 +5,24 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <mutex>
+
+#ifdef _WIN32
 #include <windows.h>
+#else
+#include <sys/wait.h>
+#endif
+#ifdef __linux__
+#include <unistd.h>
+#endif
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -105,7 +119,6 @@ void WebPackager::RenderLogPanel() {
     ImGui::BeginChild("log", ImVec2(0, 0), false,
                       ImGuiWindowFlags_HorizontalScrollbar);
 
-    // Thread-safe snapshot of logs
     std::vector<std::string> logs_snapshot;
     {
         std::lock_guard<std::mutex> lock(m_log_mutex);
@@ -128,7 +141,10 @@ void WebPackager::RenderLogPanel() {
     ImGui::EndChild();
 }
 
+// ─── File dialog (platform-specific) ────────────────────────────
+
 void WebPackager::AddFiles() {
+#ifdef _WIN32
     OPENFILENAMEA ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = GetActiveWindow();
@@ -157,15 +173,70 @@ void WebPackager::AddFiles() {
             }
         }
     }
+#elif defined(__APPLE__)
+    // macOS: osascript single file selection
+    const char *cmd =
+        "osascript -e 'POSIX path of (choose file with prompt "
+        "\"Select a web file\" of type "
+        "{\"public.html\",\"public.css\",\"public.javascript\"})' "
+        "2>/dev/null";
+    FILE *pipe = popen(cmd, "r");
+    if (pipe) {
+        char buf[4096] = {};
+        if (fgets(buf, sizeof(buf), pipe)) {
+            std::string path(buf);
+            if (!path.empty() && path.back() == '\n')
+                path.pop_back();
+            if (!path.empty())
+                LoadFile(path);
+        }
+        pclose(pipe);
+    }
+#else
+    // Linux: zenity with multi-file selection
+    std::string cmd =
+        "zenity --file-selection --multiple "
+        "--file-filter='Web files | *.html *.htm *.css *.js' "
+        "--file-filter='HTML | *.html *.htm' "
+        "--file-filter='CSS | *.css' "
+        "--file-filter='JavaScript | *.js' "
+        "--file-filter='All files | *' 2>/dev/null";
+    FILE *pipe = popen(cmd.c_str(), "r");
+    if (pipe) {
+        char buf[65536] = {};
+        if (fgets(buf, sizeof(buf), pipe)) {
+            std::string result(buf);
+            if (!result.empty() && result.back() == '\n')
+                result.pop_back();
+            if (!result.empty()) {
+                // zenity --multiple returns "|" separated paths
+                size_t start = 0, pos;
+                while ((pos = result.find('|', start)) != std::string::npos) {
+                    std::string p = result.substr(start, pos - start);
+                    if (!p.empty())
+                        LoadFile(p);
+                    start = pos + 1;
+                }
+                std::string last = result.substr(start);
+                if (!last.empty())
+                    LoadFile(last);
+            }
+        }
+        pclose(pipe);
+    }
+#endif
 }
 
 void WebPackager::LoadFile(const std::string &path) {
-    // Convert ANSI path (from GetOpenFileNameA) to native wide path for
-    // correct Chinese-character handling regardless of C++ locale
+#ifdef _WIN32
+    // Convert ANSI path to wide for Chinese character support
     int wlen = MultiByteToWideChar(CP_ACP, 0, path.c_str(), -1, nullptr, 0);
     std::wstring wpath(static_cast<size_t>(wlen), L'\0');
     MultiByteToWideChar(CP_ACP, 0, path.c_str(), -1, &wpath[0], wlen);
-    fs::path p(wpath.c_str()); // native wchar_t path, no locale conversion
+    fs::path p(wpath.c_str());
+#else
+    fs::path p(path);
+#endif
 
     if (!fs::exists(p)) {
         Log(std::string(_("Error")) + ": " + _("file_not_found") + " " +
@@ -250,9 +321,9 @@ void WebPackager::RenderBuildProgress() {
 
     ImGui::OpenPopup("##build_progress");
 
-    // Scale popup size with DPI so it displays fully on high-DPI screens
     float dpi_scale = ImGui::GetFontSize() / 16.0f;
-    if (dpi_scale < 1.0f) dpi_scale = 1.0f;
+    if (dpi_scale < 1.0f)
+        dpi_scale = 1.0f;
     ImVec2 popup_size(480 * dpi_scale, 340 * dpi_scale);
 
     ImGuiViewport *vp = ImGui::GetMainViewport();
@@ -260,10 +331,10 @@ void WebPackager::RenderBuildProgress() {
     ImGui::SetNextWindowSize(popup_size, ImGuiCond_Always);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
-    if (ImGui::BeginPopupModal("##build_progress", nullptr,
-                               ImGuiWindowFlags_NoResize |
-                                   ImGuiWindowFlags_NoTitleBar |
-                                   ImGuiWindowFlags_NoMove)) {
+    if (ImGui::BeginPopupModal(
+            "##build_progress", nullptr,
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_NoMove)) {
         ImGui::TextUnformatted(_("Build EXE"));
         ImGui::Separator();
 
@@ -279,8 +350,10 @@ void WebPackager::RenderBuildProgress() {
             std::lock_guard<std::mutex> lk(m_status_mutex);
             return m_build_status;
         }();
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.1f, 0.7f, 0.3f, 1.0f));
-        ImGui::ProgressBar(m_build_progress, ImVec2(-1, 28 * dpi_scale), status.c_str());
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+                              ImVec4(0.1f, 0.7f, 0.3f, 1.0f));
+        ImGui::ProgressBar(m_build_progress, ImVec2(-1, 28 * dpi_scale),
+                           status.c_str());
         ImGui::PopStyleColor();
         ImGui::Spacing();
         ImGui::Spacing();
@@ -331,22 +404,22 @@ void WebPackager::Log(const std::string &msg) {
         m_logs.erase(m_logs.begin(), m_logs.begin() + (m_logs.size() - 1000));
 }
 
+// ─── Process execution (platform-specific) ──────────────────────
+
+#ifdef _WIN32
 // Run a shell command without showing a console window.
 // Returns the process exit code, or -1 on failure to launch.
 // If output is non-null, captures stdout+stderr into it.
 static int run_hidden(const std::string &cmd, const std::string &cwd,
                       std::string *output = nullptr) {
     std::string full = "cmd.exe /c " + cmd;
-    // CreateProcess needs a mutable buffer for lpCommandLine
     std::vector<char> buf(full.begin(), full.end());
     buf.push_back('\0');
 
-    // cwd must be null-terminated; an empty string means inherit
     std::vector<char> cwdbuf(cwd.begin(), cwd.end());
     cwdbuf.push_back('\0');
     const char *cwd_ptr = cwd.empty() ? nullptr : cwdbuf.data();
 
-    // Pipe for capturing output
     HANDLE hStdoutRead = nullptr, hStdoutWrite = nullptr;
     SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, TRUE};
     bool capture = (output != nullptr);
@@ -375,18 +448,16 @@ static int run_hidden(const std::string &cmd, const std::string &cwd,
     }
 
     if (capture)
-        CloseHandle(hStdoutWrite); // parent no longer needs write end
+        CloseHandle(hStdoutWrite);
 
     HANDLE h = pi.hProcess;
     DWORD nHandles = capture ? 2 : 1;
     HANDLE hEvents[2] = {h, hStdoutRead};
 
-    // Pump messages while waiting so the window stays responsive
     for (;;) {
         DWORD r = MsgWaitForMultipleObjects(nHandles, hEvents, FALSE,
                                             INFINITE, QS_ALLINPUT);
         if (r == WAIT_OBJECT_0) {
-            // Process finished -- drain remaining pipe data
             if (capture) {
                 CHAR buf2[4096];
                 DWORD dwRead = 0;
@@ -394,8 +465,8 @@ static int run_hidden(const std::string &cmd, const std::string &cwd,
                                      &dwRead, nullptr) &&
                        dwRead > 0) {
                     if (!ReadFile(hStdoutRead, buf2,
-                                  std::min<size_t>(sizeof(buf2), dwRead), &dwRead,
-                                  nullptr) ||
+                                  std::min<size_t>(sizeof(buf2), dwRead),
+                                  &dwRead, nullptr) ||
                         dwRead == 0)
                         break;
                     buf2[dwRead] = '\0';
@@ -405,7 +476,6 @@ static int run_hidden(const std::string &cmd, const std::string &cwd,
             break;
         }
         if (capture && r == WAIT_OBJECT_0 + 1) {
-            // Pipe data available
             CHAR buf2[4096];
             DWORD dwRead = 0;
             if (ReadFile(hStdoutRead, buf2, sizeof(buf2) - 1, &dwRead,
@@ -415,7 +485,6 @@ static int run_hidden(const std::string &cmd, const std::string &cwd,
                 *output += buf2;
             }
         } else if (r == WAIT_OBJECT_0 + nHandles) {
-            // Windows message in queue
             MSG msg;
             while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
                 TranslateMessage(&msg);
@@ -428,13 +497,41 @@ static int run_hidden(const std::string &cmd, const std::string &cwd,
 
     DWORD ec = 0;
     GetExitCodeProcess(pi.hProcess, &ec);
-    if (capture) {
+    if (capture)
         CloseHandle(hStdoutRead);
-    }
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
     return static_cast<int>(ec);
 }
+#else
+// Unix: run command via popen, capture output
+static int run_hidden(const std::string &cmd, const std::string &cwd,
+                      std::string *output = nullptr) {
+    // Build a shell command that cds into cwd first
+    std::string full_cmd;
+    if (!cwd.empty())
+        full_cmd = "cd \"" + cwd + "\" && " + cmd;
+    else
+        full_cmd = cmd;
+
+    FILE *pipe = popen(full_cmd.c_str(), "r");
+    if (!pipe)
+        return -1;
+
+    if (output) {
+        char buf[4096];
+        while (fgets(buf, sizeof(buf), pipe))
+            *output += buf;
+    }
+
+    int rc = pclose(pipe);
+    if (WIFEXITED(rc))
+        return WEXITSTATUS(rc);
+    return -1;
+}
+#endif
+
+// ─── Build pipeline ─────────────────────────────────────────────
 
 void WebPackager::BuildExe() {
     if (m_files.empty()) {
@@ -458,11 +555,44 @@ void WebPackager::BuildExe() {
     m_build_thread = std::thread(&WebPackager::BuildExeThread, this);
 }
 
+#ifdef _WIN32
+// Get the directory containing the current executable
+static fs::path get_exe_dir() {
+    char exe_path[MAX_PATH];
+    GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
+    return fs::path(exe_path).parent_path();
+}
+#elif defined(__linux__)
+static fs::path get_exe_dir() {
+    char buf[4096];
+    ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (len != -1) {
+        buf[len] = '\0';
+        return fs::path(buf).parent_path();
+    }
+    return fs::current_path();
+}
+#elif defined(__APPLE__)
+static fs::path get_exe_dir() {
+    uint32_t size = 4096;
+    char buf[4096];
+    if (_NSGetExecutablePath(buf, &size) == 0)
+        return fs::path(buf).parent_path();
+    return fs::current_path();
+}
+#else
+static fs::path get_exe_dir() { return fs::current_path(); }
+#endif
+
 void WebPackager::BuildExeThread() {
     try {
-        char exe_path[MAX_PATH];
-        GetModuleFileNameA(nullptr, exe_path, MAX_PATH);
-        fs::path exe_dir = fs::path(exe_path).parent_path();
+#ifndef _WIN32
+        Log(std::string(_("Error")) +
+            ": EXE generation currently only supported on Windows");
+        m_building = false;
+        return;
+#else
+        fs::path exe_dir = get_exe_dir();
         fs::path lib_dir = exe_dir / "lib";
 
         fs::path webview_lib = lib_dir / "webview" / "libwebview.a";
@@ -508,11 +638,11 @@ void WebPackager::BuildExeThread() {
 
         // Step 1: compile
         {
-            std::string cmd = "g++ -std=c++17 -O3 -DNDEBUG -DWEBVIEW_STATIC"
-                " -I\"" + wv_inc + "\""
-                " -I\"" + wv2_inc + "\""
-                " -c \"" + src_file + "\" -o \"" + obj_file + "\""
-                " 2>&1";
+            std::string cmd =
+                "g++ -std=c++17 -O3 -DNDEBUG -DWEBVIEW_STATIC"
+                " -I\"" +
+                wv_inc + "\"" + " -I\"" + wv2_inc + "\"" + " -c \"" +
+                src_file + "\" -o \"" + obj_file + "\"" + " 2>&1";
 
             Log("> g++ -c main.cc ...");
             std::string out;
@@ -535,10 +665,11 @@ void WebPackager::BuildExeThread() {
 
         // Step 2: link
         {
-            std::string cmd = "g++ \"" + obj_file + "\""
-                " -o \"" + out_file + "\""
+            std::string cmd =
+                "g++ \"" + obj_file + "\"" + " -o \"" + out_file + "\"" +
                 " -L\"" + wv_lib + "\" -lwebview"
-                " \"" + wv2_lib_x64 + "\""
+                " \"" +
+                wv2_lib_x64 + "\"" +
                 " -static -static-libgcc -static-libstdc++"
                 " -mwindows"
                 " -ld3d11 -ldxgi -ldwmapi -ld3dcompiler"
@@ -569,7 +700,7 @@ void WebPackager::BuildExeThread() {
         }
         Log(std::string(_("Success")) + ": " + _("exe_generated") + " " +
             out_file);
-
+#endif // _WIN32
     } catch (const std::exception &e) {
         Log(std::string(_("Error")) + ": " + e.what());
     }

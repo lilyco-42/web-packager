@@ -8,7 +8,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 # imgui
 set(IMGUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/imgui")
 if(NOT EXISTS "${IMGUI_DIR}")
-  message(STATUS "imgui not found locally, fetching via FetchContent...")
   include(FetchContent)
   FetchContent_Declare(
     imgui
@@ -19,10 +18,24 @@ if(NOT EXISTS "${IMGUI_DIR}")
   set(IMGUI_DIR "${imgui_SOURCE_DIR}")
 endif()
 
+# GLFW (cross-platform window + OpenGL context)
+set(GLFW_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/glfw")
+if(NOT EXISTS "${GLFW_DIR}")
+  include(FetchContent)
+  set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+  set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(
+    glfw
+    GIT_REPOSITORY https://github.com/glfw/glfw.git
+    GIT_TAG 3.4
+  )
+  FetchContent_MakeAvailable(glfw)
+  set(GLFW_DIR "${glfw_SOURCE_DIR}")
+endif()
+
 # webview
-set(WEBVIEW_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/webview")
-if(NOT EXISTS "${WEBVIEW_DIR}")
-  message(STATUS "webview not found locally, fetching via FetchContent...")
+if(WIN32 OR APPLE OR UNIX)
   include(FetchContent)
   FetchContent_Declare(
     webview
@@ -30,39 +43,77 @@ if(NOT EXISTS "${WEBVIEW_DIR}")
     GIT_TAG 0.12.0
   )
   FetchContent_MakeAvailable(webview)
-  set(WEBVIEW_DIR "${webview_SOURCE_DIR}")
 endif()
 
-# ---- Executable ----
-
-add_executable(web_packager WIN32
-    src/main.cc
-    src/web_packager.cc
-    src/app.rc
-    # imgui sources
-    "${IMGUI_DIR}/imgui.cpp"
-    "${IMGUI_DIR}/imgui_draw.cpp"
-    "${IMGUI_DIR}/imgui_tables.cpp"
-    "${IMGUI_DIR}/imgui_widgets.cpp"
-    "${IMGUI_DIR}/backends/imgui_impl_win32.cpp"
-    "${IMGUI_DIR}/backends/imgui_impl_dx11.cpp"
-)
-
-target_include_directories(web_packager PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    "${IMGUI_DIR}"
-    "${IMGUI_DIR}/backends"
-)
-
-target_link_libraries(web_packager PRIVATE
+# ---- Platform-specific setup ----
+if(WIN32)
+  set(WIN32_GUI_FLAG WIN32)
+  set(WEB_PACKAGER_LIBS
     webview::core
+    glfw
+    opengl32
     d3d11 dxgi dwmapi d3dcompiler
     advapi32 ole32 shell32 shlwapi
     user32 version kernel32 gdi32 winspool
     oleaut32 uuid comdlg32
+  )
+  set(IMGUI_BACKENDS
+    "${IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
+  )
+elseif(APPLE)
+  find_library(COCOA_LIB Cocoa)
+  find_library(IOKIT_LIB IOKit)
+  find_library(COREVIDEO_LIB CoreVideo)
+  find_library(OPENGL_LIB OpenGL)
+  set(WEB_PACKAGER_LIBS
+    webview::core
+    glfw
+    "${COCOA_LIB}" "${IOKIT_LIB}" "${COREVIDEO_LIB}" "${OPENGL_LIB}"
+  )
+  set(IMGUI_BACKENDS
+    "${IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
+  )
+elseif(UNIX)
+  find_package(X11 REQUIRED)
+  set(WEB_PACKAGER_LIBS
+    webview::core
+    glfw
+    "${X11_X11_LIB}"
+    GL dl pthread
+  )
+  set(IMGUI_BACKENDS
+    "${IMGUI_DIR}/backends/imgui_impl_glfw.cpp"
+    "${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp"
+  )
+endif()
+
+# ---- Executable ----
+add_executable(web_packager ${WIN32_GUI_FLAG}
+  src/main.cc
+  src/web_packager.cc
+  ${IMGUI_BACKENDS}
+  "${IMGUI_DIR}/imgui.cpp"
+  "${IMGUI_DIR}/imgui_draw.cpp"
+  "${IMGUI_DIR}/imgui_tables.cpp"
+  "${IMGUI_DIR}/imgui_widgets.cpp"
+)
+if(WIN32)
+  target_sources(web_packager PRIVATE src/app.rc)
+endif()
+
+target_compile_definitions(web_packager PRIVATE IMGUI_IMPL_OPENGL_LOADER_GLFW)
+
+target_include_directories(web_packager PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/src"
+  "${IMGUI_DIR}"
+  "${IMGUI_DIR}/backends"
 )
 
+target_link_libraries(web_packager PRIVATE ${WEB_PACKAGER_LIBS})
+
 set_target_properties(web_packager PROPERTIES
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON
+  CXX_STANDARD 17
+  CXX_STANDARD_REQUIRED ON
 )
