@@ -1,0 +1,133 @@
+name: Build
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+env:
+  CMAKE_BUILD_TYPE: Release
+
+jobs:
+  # ─── Windows x86_64 (full build) ─────────────────────────────
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 + MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-dlfcn
+            git
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DCMAKE_C_COMPILER=gcc
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Prepare distribution
+        run: |
+          mkdir -p dist/lib/webview/include dist/lib/webview2/include dist/lib/webview2/lib/x64
+          cp build/bin/web_packager.exe dist/
+          # Build SFX tools
+          g++ -O3 -static -s -mwindows sfx/sfx_stub.cc -o sfx/sfx_stub.exe
+          g++ -O3 -static -s sfx/sfx_packager.cc -o sfx/sfx_packager.exe -std=c++17
+          # Note: lib/ directory needs pre-built libraries from a prior release or cache.
+          # For a full build from source, see the 'full-release' workflow.
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-packager-windows-x64
+          path: dist/
+          compression-level: 9
+
+  # ─── Release: full package with pre-built libs ───────────────
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2 + MinGW
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-dlfcn
+            git
+            mingw-w64-ucrt-x86_64-powershell
+
+      - name: Build web_packager
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
+          ninja -C build
+
+      - name: Build pre-built libs for packaging pipeline
+        run: |
+          mkdir -p lib/webview/include lib/webview2/include lib/webview2/lib/x64
+          # Build webview static library
+          git clone --depth 1 https://github.com/webview/webview.git deps/webview
+          cd deps/webview
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ \
+            -DWEBVIEW_BUILD_SHARED_LIBS=OFF -DWEBVIEW_BUILD_STATIC_LIBS=ON
+          ninja -C build
+          cp build/libwebview.a ../../lib/webview/
+          cp -r core/include/* ../../lib/webview/include/
+          cd ../..
+          # WebView2 headers (download SDK)
+          curl -L -o WebView2.zip https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40
+          unzip -q WebView2.zip -d deps/webview2
+          cp deps/webview2/build/native/include/WebView2.h lib/webview2/include/
+          cp deps/webview2/build/native/include/WebView2EnvironmentOptions.h lib/webview2/include/
+          cp deps/webview2/runtimes/win-x64/native/WebView2LoaderStatic.lib lib/webview2/lib/x64/
+          rm -f WebView2.zip
+
+      - name: Package dist
+        run: |
+          mkdir -p dist/lib
+          cp -r lib/* dist/lib/
+          cp build/bin/web_packager.exe dist/
+          bash scripts/package_dist.sh
+
+      - name: Build SFX
+        run: |
+          g++ -O3 -static -s -mwindows sfx/sfx_stub.cc -o sfx/sfx_stub.exe
+          g++ -O3 -static -s sfx/sfx_packager.cc -o sfx/sfx_packager.exe -std=c++17
+          ./sfx/sfx_packager.exe sfx/sfx_stub.exe dist WebPackager_SFX.exe
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: WebPackager ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          files: |
+            WebPackager_SFX.exe
+            dist/dist.zip
+          fail_on_unmatched_files: false

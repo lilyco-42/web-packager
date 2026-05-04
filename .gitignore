@@ -1,0 +1,24 @@
+# Build Output
+build/
+build3/
+out/
+output/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Dependencies (fetched by CMake)
+deps/
+
+# Distribution
+dist/
+*.zip
+!scripts/*.zip

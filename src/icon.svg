@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4e83fd"/>
+      <stop offset="100%" stop-color="#36c96e"/>
+    </linearGradient>
+    <linearGradient id="box" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#e8ecf4" stop-opacity="0.95"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect x="8" y="8" width="240" height="240" rx="48" ry="48" fill="url(#bg)"/>
+  <!-- Package box -->
+  <rect x="52" y="80" width="152" height="120" rx="16" fill="url(#box)" stroke="#d0d5e0" stroke-width="2"/>
+  <!-- Box lid / flap -->
+  <path d="M52 96 Q128 60 204 96" fill="none" stroke="#d0d5e0" stroke-width="2"/>
+  <path d="M52 80 L52 96 Q128 60 204 96 L204 80 Z" fill="#f0f3fa" stroke="#d0d5e0" stroke-width="2"/>
+  <!-- HTML tag on the box -->
+  <text x="128" y="148" font-family="Consolas, monospace" font-size="36" font-weight="bold" fill="#4e83fd" text-anchor="middle">&lt;/&gt;</text>
+  <!-- Arrow going into box (file moving into package) -->
+  <path d="M80 40 L80 76" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity="0.8"/>
+  <polygon points="74,70 80,84 86,70" fill="#ffffff" opacity="0.8"/>
+  <!-- Small file indicators -->
+  <rect x="68" y="28" width="24" height="30" rx="4" fill="#ffffff" opacity="0.6"/>
+  <text x="80" y="48" font-family="Consolas, monospace" font-size="10" fill="#4e83fd" text-anchor="middle" opacity="0.6">.html</text>
+  <rect x="100" y="32" width="20" height="24" rx="3" fill="#ffffff" opacity="0.5"/>
+  <rect x="128" y="30" width="20" height="24" rx="3" fill="#ffffff" opacity="0.4"/>
+</svg>
