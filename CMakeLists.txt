@@ -27,7 +27,7 @@ if(NOT EXISTS "${WEBVIEW_DIR}")
   FetchContent_Declare(
     webview
     GIT_REPOSITORY https://github.com/webview/webview.git
-    GIT_TAG master
+    GIT_TAG 0.12.0
   )
   FetchContent_MakeAvailable(webview)
   set(WEBVIEW_DIR "${webview_SOURCE_DIR}")
@@ -38,7 +38,7 @@ endif()
 add_executable(web_packager WIN32
     src/main.cc
     src/web_packager.cc
-    app.rc
+    src/app.rc
     # imgui sources
     "${IMGUI_DIR}/imgui.cpp"
     "${IMGUI_DIR}/imgui_draw.cpp"
