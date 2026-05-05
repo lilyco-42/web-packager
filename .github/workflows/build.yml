@@ -5,15 +5,14 @@ on:
     branches: [master, main, win32-dx11]
     tags: ['v*']
   pull_request:
-    branches: [master, main]
+    branches: [master, main, win32-dx11]
   workflow_dispatch:
 
 env:
   CMAKE_BUILD_TYPE: Release
 
 jobs:
-  # ─── Windows x86_64 ──────────────────────────────────────────
-  windows:
+  build:
     runs-on: windows-latest
     defaults:
       run:
@@ -39,25 +38,27 @@ jobs:
             -DCMAKE_CXX_COMPILER=g++ \
             -DCMAKE_C_COMPILER=gcc
 
-      - name: Build
+      - name: Build web_packager
         run: ninja -C build
 
       - name: Build SFX tools
         run: |
-          g++ -O3 -static -s -mwindows sfx/sfx_stub.cc -o sfx/sfx_stub.exe
-          g++ -O3 -static -s sfx/sfx_packager.cc -o sfx/sfx_packager.exe -std=c++17
+          g++ -O3 -static -s -mwindows sfx/sfx_stub.cc -o build/sfx_stub.exe
+          g++ -O3 -static -s sfx/sfx_packager.cc -o build/sfx_packager.exe -std=c++17
 
-      - name: Upload artifact
+      - name: Upload web_packager artifact
         uses: actions/upload-artifact@v4
         with:
-          name: web-packager-windows-x64
-          path: build/bin/web_packager.exe
+          name: web-packager
+          path: |
+            build/bin/web_packager.exe
+            build/sfx_stub.exe
+            build/sfx_packager.exe
           compression-level: 9
 
-  # ─── Release: full SFX package ───────────────────────────────
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows]
+    needs: [build]
     runs-on: windows-latest
     defaults:
       run:
@@ -75,14 +76,14 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             git
-            mingw-w64-ucrt-x86_64-powershell
 
-      - name: Build web_packager
-        run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
-          ninja -C build
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: web-packager
+          path: build
 
-      - name: Build pre-built libs
+      - name: Build pre-built libs for dist
         run: |
           mkdir -p lib/webview/include lib/webview2/include lib/webview2/lib/x64
           # Build webview static library
@@ -94,7 +95,7 @@ jobs:
           cp build/libwebview.a ../../lib/webview/
           cp -r core/include/* ../../lib/webview/include/
           cd ../..
-          # WebView2 headers
+          # WebView2 headers (download SDK)
           curl -L -o WebView2.zip https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40
           unzip -q WebView2.zip -d deps/webview2
           cp deps/webview2/build/native/include/WebView2.h lib/webview2/include/
@@ -110,15 +111,14 @@ jobs:
 
       - name: Build SFX
         run: |
-          g++ -O3 -static -s -mwindows sfx/sfx_stub.cc -o sfx/sfx_stub.exe
-          g++ -O3 -static -s sfx/sfx_packager.cc -o sfx/sfx_packager.exe -std=c++17
-          ./sfx/sfx_packager.exe sfx/sfx_stub.exe dist WebPackager_SFX.exe
+          chmod +x build/sfx_stub.exe build/sfx_packager.exe
+          ./build/sfx_packager.exe build/sfx_stub.exe dist WebPackager_SFX.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: WebPackager ${{ github.ref_name }}
-          body_path: CHANGELOG.md
+          body: "WebPackager ${{ github.ref_name }} release"
           files: |
             WebPackager_SFX.exe
           fail_on_unmatched_files: false
