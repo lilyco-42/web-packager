@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, win32-dx11]
     tags: ['v*']
   pull_request:
     branches: [master, main]
@@ -12,7 +12,7 @@ env:
   CMAKE_BUILD_TYPE: Release
 
 jobs:
-  # ─── Windows x86_64 (full build) ─────────────────────────────
+  # ─── Windows x86_64 ──────────────────────────────────────────
   windows:
     runs-on: windows-latest
     defaults:
@@ -30,7 +30,6 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-dlfcn
             git
 
       - name: Configure
@@ -43,24 +42,19 @@ jobs:
       - name: Build
         run: ninja -C build
 
-      - name: Prepare distribution
+      - name: Build SFX tools
         run: |
-          mkdir -p dist/lib/webview/include dist/lib/webview2/include dist/lib/webview2/lib/x64
-          cp build/bin/web_packager.exe dist/
-          # Build SFX tools
           g++ -O3 -static -s -mwindows sfx/sfx_stub.cc -o sfx/sfx_stub.exe
           g++ -O3 -static -s sfx/sfx_packager.cc -o sfx/sfx_packager.exe -std=c++17
-          # Note: lib/ directory needs pre-built libraries from a prior release or cache.
-          # For a full build from source, see the 'full-release' workflow.
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: web-packager-windows-x64
-          path: dist/
+          path: build/bin/web_packager.exe
           compression-level: 9
 
-  # ─── Release: full package with pre-built libs ───────────────
+  # ─── Release: full SFX package ───────────────────────────────
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [windows]
@@ -80,7 +74,6 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-dlfcn
             git
             mingw-w64-ucrt-x86_64-powershell
 
@@ -89,7 +82,7 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
           ninja -C build
 
-      - name: Build pre-built libs for packaging pipeline
+      - name: Build pre-built libs
         run: |
           mkdir -p lib/webview/include lib/webview2/include lib/webview2/lib/x64
           # Build webview static library
@@ -101,7 +94,7 @@ jobs:
           cp build/libwebview.a ../../lib/webview/
           cp -r core/include/* ../../lib/webview/include/
           cd ../..
-          # WebView2 headers (download SDK)
+          # WebView2 headers
           curl -L -o WebView2.zip https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40
           unzip -q WebView2.zip -d deps/webview2
           cp deps/webview2/build/native/include/WebView2.h lib/webview2/include/
@@ -114,7 +107,6 @@ jobs:
           mkdir -p dist/lib
           cp -r lib/* dist/lib/
           cp build/bin/web_packager.exe dist/
-          bash scripts/package_dist.sh
 
       - name: Build SFX
         run: |
@@ -129,5 +121,4 @@ jobs:
           body_path: CHANGELOG.md
           files: |
             WebPackager_SFX.exe
-            dist/dist.zip
           fail_on_unmatched_files: false
