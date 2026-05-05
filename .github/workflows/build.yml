@@ -93,6 +93,7 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ \
             -DWEBVIEW_BUILD_SHARED_LIBS=OFF -DWEBVIEW_BUILD_STATIC_LIBS=ON \
             -DWEBVIEW_CLANG_FORMAT_EXE=OFF
+            -DWEBVIEW_BUILD_DOCS=OFF
           ninja -C build
           cp build/libwebview.a ../../lib/webview/
           cp -r core/include/* ../../lib/webview/include/
