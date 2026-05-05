@@ -91,7 +91,8 @@ jobs:
           git clone --depth 1 https://github.com/webview/webview.git deps/webview
           cd deps/webview
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ \
-            -DWEBVIEW_BUILD_SHARED_LIBS=OFF -DWEBVIEW_BUILD_STATIC_LIBS=ON
+            -DWEBVIEW_BUILD_SHARED_LIBS=OFF -DWEBVIEW_BUILD_STATIC_LIBS=ON \
+            -DWEBVIEW_CLANG_FORMAT_EXE=OFF
           ninja -C build
           cp build/libwebview.a ../../lib/webview/
           cp -r core/include/* ../../lib/webview/include/
@@ -122,10 +123,10 @@ jobs:
             WebPackager ${{ github.ref_name }}
 
             ### Downloads
-            - WebPackager_SFX.exe — 单文件自解压包
-            - web_packager.exe — 单独的可执行文件（需搭配 lib/ 目录）
+            - WebPackager_SFX.exe — single-file self-extracting package
+            - web_packager.exe — standalone executable (needs lib/ directory)
 
-            ### 系统要求
+            ### Requirements
             - Windows 10/11 (x86_64)
             - WebView2 Runtime
           files: |
