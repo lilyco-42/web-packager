@@ -30,6 +30,7 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-dlfcn
+            mingw-w64-ucrt-x86_64-unzip
             git
 
       - name: Configure
@@ -77,6 +78,7 @@ jobs:
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-dlfcn
+            mingw-w64-ucrt-x86_64-unzip
             git
 
       - name: Download built artifacts
