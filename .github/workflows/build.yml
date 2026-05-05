@@ -91,8 +91,9 @@ jobs:
           git clone --depth 1 https://github.com/webview/webview.git deps/webview
           cd deps/webview
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ \
-            -DWEBVIEW_BUILD_SHARED_LIBS=OFF -DWEBVIEW_BUILD_STATIC_LIBS=ON \
-            -DWEBVIEW_CLANG_FORMAT_EXE=OFF
+            -DWEBVIEW_BUILD_SHARED_LIBS=OFF \
+            -DWEBVIEW_BUILD_STATIC_LIBS=ON \
+            -DWEBVIEW_CLANG_FORMAT_EXE=OFF \
             -DWEBVIEW_BUILD_DOCS=OFF
           ninja -C build
           cp build/libwebview.a ../../lib/webview/
@@ -124,12 +125,18 @@ jobs:
             WebPackager ${{ github.ref_name }}
 
             ### Downloads
-            - WebPackager_SFX.exe — single-file self-extracting package
-            - web_packager.exe — standalone executable (needs lib/ directory)
+            - WebPackager_SFX.exe — 单文件自解压包，下载后双击即可运行
+            - web_packager.exe — 主程序（需要 lib/ 目录一起使用）
 
-            ### Requirements
+            ### 系统要求
             - Windows 10/11 (x86_64)
-            - WebView2 Runtime
+            - WebView2 Runtime（Win10+ 自带）
+
+            ### 使用说明
+            1. 下载 WebPackager_SFX.exe，双击自解压运行
+            2. 点击 Add Files 添加 HTML/CSS/JS 文件
+            3. 设置应用名称和窗口大小
+            4. 点击 Build EXE 生成独立的桌面应用
           files: |
             WebPackager_SFX.exe
           fail_on_unmatched_files: false
