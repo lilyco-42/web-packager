@@ -105,7 +105,7 @@ jobs:
           unzip -q WebView2.zip -d deps/webview2
           cp deps/webview2/build/native/include/WebView2.h lib/webview2/include/
           cp deps/webview2/build/native/include/WebView2EnvironmentOptions.h lib/webview2/include/
-          cp deps/webview2/runtimes/win-x64/native/WebView2LoaderStatic.lib lib/webview2/lib/x64/
+          cp deps/webview2/build/native/x64/WebView2LoaderStatic.lib lib/webview2/lib/x64/
           rm -f WebView2.zip
 
       - name: Package dist directory
