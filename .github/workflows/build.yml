@@ -86,17 +86,17 @@ jobs:
       - name: Build pre-built libs for dist
         run: |
           mkdir -p lib/webview/include lib/webview2/include lib/webview2/lib/x64
-          # Build webview static library
           git clone --depth 1 https://github.com/webview/webview.git deps/webview
           cd deps/webview
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ \
-            -DWEBVIEW_BUILD_SHARED_LIBS=OFF -DWEBVIEW_BUILD_STATIC_LIBS=ON
-            -DWEBVIEW_CLANG_FORMAT_EXE=OFF
+            -DWEBVIEW_BUILD_SHARED_LIBS=OFF \
+            -DWEBVIEW_BUILD_STATIC_LIBS=ON \
+            -DWEBVIEW_CLANG_FORMAT_EXE=OFF \
+            -DWEBVIEW_BUILD_DOCS=OFF
           ninja -C build
           cp build/libwebview.a ../../lib/webview/
           cp -r core/include/* ../../lib/webview/include/
           cd ../..
-          # WebView2 headers (download SDK)
           curl -L -o WebView2.zip https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40
           unzip -q WebView2.zip -d deps/webview2
           cp deps/webview2/build/native/include/WebView2.h lib/webview2/include/
