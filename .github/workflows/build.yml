@@ -96,7 +96,7 @@ jobs:
             -DWEBVIEW_CLANG_FORMAT_EXE=OFF \
             -DWEBVIEW_BUILD_DOCS=OFF
           ninja -C build
-          cp core/libwebview.a ../../lib/webview/
+          cp build/core/libwebview.a ../../lib/webview/
           cp -r core/include/* ../../lib/webview/include/
           cd ../..
           curl -L -o WebView2.zip https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40
