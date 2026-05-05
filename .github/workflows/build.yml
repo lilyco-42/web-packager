@@ -12,8 +12,7 @@ env:
   CMAKE_BUILD_TYPE: Release
 
 jobs:
-  # ─── Windows x86_64 (full build) ─────────────────────────────
-  windows:
+  build:
     runs-on: windows-latest
     defaults:
       run:
@@ -43,27 +42,24 @@ jobs:
       - name: Build
         run: ninja -C build
 
-      - name: Prepare distribution
+      - name: Build SFX tools
         run: |
-          mkdir -p dist/lib/webview/include dist/lib/webview2/include dist/lib/webview2/lib/x64
-          cp build/bin/web_packager.exe dist/
-          # Build SFX tools
-          g++ -O3 -static -s -mwindows sfx/sfx_stub.cc -o sfx/sfx_stub.exe
-          g++ -O3 -static -s sfx/sfx_packager.cc -o sfx/sfx_packager.exe -std=c++17
-          # Note: lib/ directory needs pre-built libraries from a prior release or cache.
-          # For a full build from source, see the 'full-release' workflow.
+          g++ -O3 -static -s -mwindows sfx/sfx_stub.cc -o build/sfx_stub.exe
+          g++ -O3 -static -s sfx/sfx_packager.cc -o build/sfx_packager.exe -std=c++17
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: web-packager-windows-x64
-          path: dist/
+          name: web-packager
+          path: |
+            build/bin/web_packager.exe
+            build/sfx_stub.exe
+            build/sfx_packager.exe
           compression-level: 9
 
-  # ─── Release: full package with pre-built libs ───────────────
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows]
+    needs: [build]
     runs-on: windows-latest
     defaults:
       run:
@@ -82,17 +78,16 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-dlfcn
             git
-            mingw-w64-ucrt-x86_64-powershell
 
-      - name: Build web_packager
-        run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
-          ninja -C build
+      - name: Download built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: web-packager
+          path: build
 
-      - name: Build pre-built libs for packaging pipeline
+      - name: Build pre-built libs for dist
         run: |
           mkdir -p lib/webview/include lib/webview2/include lib/webview2/lib/x64
-          # Build webview static library
           git clone --depth 1 https://github.com/webview/webview.git deps/webview
           cd deps/webview
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ \
@@ -101,7 +96,6 @@ jobs:
           cp build/libwebview.a ../../lib/webview/
           cp -r core/include/* ../../lib/webview/include/
           cd ../..
-          # WebView2 headers (download SDK)
           curl -L -o WebView2.zip https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2/1.0.2903.40
           unzip -q WebView2.zip -d deps/webview2
           cp deps/webview2/build/native/include/WebView2.h lib/webview2/include/
@@ -109,25 +103,31 @@ jobs:
           cp deps/webview2/runtimes/win-x64/native/WebView2LoaderStatic.lib lib/webview2/lib/x64/
           rm -f WebView2.zip
 
-      - name: Package dist
+      - name: Package dist directory
         run: |
           mkdir -p dist/lib
           cp -r lib/* dist/lib/
           cp build/bin/web_packager.exe dist/
-          bash scripts/package_dist.sh
 
-      - name: Build SFX
+      - name: Build SFX package
         run: |
-          g++ -O3 -static -s -mwindows sfx/sfx_stub.cc -o sfx/sfx_stub.exe
-          g++ -O3 -static -s sfx/sfx_packager.cc -o sfx/sfx_packager.exe -std=c++17
-          ./sfx/sfx_packager.exe sfx/sfx_stub.exe dist WebPackager_SFX.exe
+          chmod +x build/sfx_stub.exe build/sfx_packager.exe
+          ./build/sfx_packager.exe build/sfx_stub.exe dist WebPackager_SFX.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: WebPackager ${{ github.ref_name }}
-          body_path: CHANGELOG.md
+          body: |
+            WebPackager ${{ github.ref_name }}
+
+            ### Downloads
+            - WebPackager_SFX.exe — 单文件自解压包
+            - web_packager.exe — 单独的可执行文件（需搭配 lib/ 目录）
+
+            ### 系统要求
+            - Windows 10/11 (x86_64)
+            - WebView2 Runtime
           files: |
             WebPackager_SFX.exe
-            dist/dist.zip
           fail_on_unmatched_files: false
